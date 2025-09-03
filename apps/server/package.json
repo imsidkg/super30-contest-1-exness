@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "build": "tsc",
     "start": "node dist/index.js",
     "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts"
   },
@@ -12,20 +13,24 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "express": "^4.19.2",
-    "nodemailer": "^6.9.14",
-    "jsonwebtoken": "^9.0.2",
     "cookie-parser": "^1.4.6",
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ioredis": "^5.4.1",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.9.14",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.7",
     "@types/express": "^4.17.21",
+    "@types/ioredis": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^20.14.10",
     "@types/nodemailer": "^6.4.15",
-    "@types/jsonwebtoken": "^9.0.6",
-    "@types/cookie-parser": "^1.4.7",
-    "typescript": "^5.5.3",
+    "@types/ws": "^8.5.10",
     "nodemon": "^3.1.4",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
   }
 }

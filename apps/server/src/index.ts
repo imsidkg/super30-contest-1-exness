@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
+import { fetchBackpackData } from './websockets/backpackWebsocket';
 
 dotenv.config();
 
@@ -80,4 +81,5 @@ app.get('/profile', authenticateToken, (req, res) => {
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
+  fetchBackpackData(['SOL']);
 });
