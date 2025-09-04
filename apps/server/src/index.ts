@@ -5,13 +5,14 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { fetchBackpackData } from "./websockets/backpackWebsocket";
 import { Kafka } from "kafkajs";
+import { redis } from "./lib/redisClient";
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-const kafka = new Kafka({
+export const kafka = new Kafka({
   clientId: "create-order",
   brokers: ["localhost:9092"],
 });
@@ -31,8 +32,6 @@ const transporter = nodemailer.createTransport({
 
 app.post("/signup", async (req, res) => {
   const { email } = req.body;
-  const initialBalance = 5000;
-  req.user = 
   if (!email) {
     return res.status(400).send("Email is required");
   }
@@ -49,6 +48,7 @@ app.post("/signup", async (req, res) => {
       subject: "Your Magic Link",
       html: `<p>Click <a href="${magicLink}">here</a> to log in.</p>`,
     });
+
     res.send("Magic link sent to your email");
   } catch (error) {
     console.error("Error sending email:", error);
@@ -56,7 +56,7 @@ app.post("/signup", async (req, res) => {
   }
 });
 
-app.get("/verify", (req, res) => {
+app.get("/verify", async (req, res) => {
   const { token } = req.query;
 
   if (!token) {
@@ -67,7 +67,14 @@ app.get("/verify", (req, res) => {
     const decoded = jwt.verify(
       token as string,
       process.env.JWT_SECRET as string
-    );
+    ) as { email: string };
+    const userEmail = decoded.email;
+
+    const balance = await redis.get(`user:${userEmail}:balance`);
+    if (balance === null) {
+      await redis.set(`user:${userEmail}:balance`, "5000");
+    }
+
     res.cookie("auth_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -78,7 +85,13 @@ app.get("/verify", (req, res) => {
   }
 });
 
-const authenticateToken = (
+// Define a User type
+type User = {
+  email: string;
+  balance: number;
+};
+
+const authenticateToken = async (
   req: express.Request,
   res: express.Response,
   next: express.NextFunction
@@ -90,7 +103,17 @@ const authenticateToken = (
   }
 
   try {
-    jwt.verify(token, process.env.JWT_SECRET as string);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
+      email: string;
+    };
+    const userEmail = decoded.email;
+
+    const balance = await redis.get(`user:${userEmail}:balance`);
+
+    res.locals.user = {
+      email: userEmail,
+      balance: balance ? parseInt(balance) : 0,
+    } as User;
     next();
   } catch (error) {
     res.status(403).send("Invalid Token");
@@ -98,32 +121,58 @@ const authenticateToken = (
 };
 
 app.get("/profile", authenticateToken, (req, res) => {
-  res.send("Welcome to your profile!");
+  const user = res.locals.user as User;
+  res.send(`Welcome to your profile! Your balance is: ${user.balance}`);
 });
 
-app.post("/api/v1/trade/createa", async (req, res) => {
+app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
   const { asset, type, margin, leverage, slippage, priceForSlippag } = req.body;
+  const user = res.locals.user as User;
+  await producer.connect();
+  if (!user || !user.email) {
+    return res.status(401).send("User not authenticated.");
+  }
 
   await producer.send({
     topic: "recieved-backpack-data",
     messages: [
       {
         value: JSON.stringify({
+          data: "trade",
           asset,
           type,
           margin,
           leverage,
           slippage,
           priceForSlippag,
+          balance: user.balance,
+          userEmail: user.email,
         }),
       },
     ],
   });
+
+
+  
   res.status(200).json({ success: true, message: "Trade request submitted" });
 });
 
-app.listen(port, async() => {
+app.listen(port, async () => {
   console.log(`Server running on http://localhost:${port}`);
-  await producer.connect();
+
+  try {
+    await producer.connect();
+    console.log("Kafka producer connected");
+  } catch (err) {
+    console.error(" Failed to connect Kafka producer", err);
+    process.exit(1);
+  }
+
   fetchBackpackData(["SOL"]);
+
+  process.on("SIGINT", async () => {
+    console.log("Disconnecting Kafka producer...");
+    await producer.disconnect();
+    process.exit(0);
+  });
 });

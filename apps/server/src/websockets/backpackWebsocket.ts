@@ -1,9 +1,17 @@
+import { Kafka } from "kafkajs";
 import Websocket, { RawData } from "ws";
-import { redis } from "../lib/redisClient";
 
 export const fetchBackpackData = async (symbols: string[]) => {
   const url = "wss://ws.backpack.exchange/";
   const ws = new Websocket(url);
+
+  const kafka = new Kafka({
+    clientId: "binance-data",
+    brokers: ["localhost:9092"],
+  });
+
+  const producer = kafka.producer();
+  await producer.connect()
 
   ws.on("open", () => {
     console.log(" Websocket connected to Backpack");
@@ -48,8 +56,20 @@ export const fetchBackpackData = async (symbols: string[]) => {
             },
           ],
         };
-        redis.publish("backpack:payload", JSON.stringify(priceUpdatePayload));
-        console.log('publised')
+
+        await producer.send({
+          topic: "recieved-backpack-data",
+          messages: [
+            {
+              value: JSON.stringify({
+                priceUpdatePayload,
+                data: "binance"
+              }),
+            },
+          ],
+        });
+
+        console.log("published");
       }
     } catch (error: any) {
       console.error(" Error processing message:", error);
