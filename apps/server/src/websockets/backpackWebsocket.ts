@@ -48,6 +48,8 @@ export const fetchBackpackData = async (symbols: string[]) => {
             },
           ],
         };
+        redis.publish("backpack:payload", JSON.stringify(priceUpdatePayload));
+        console.log('publised')
       }
     } catch (error: any) {
       console.error(" Error processing message:", error);
@@ -60,5 +62,5 @@ export const fetchBackpackData = async (symbols: string[]) => {
 
   ws.on("close", () => {
     console.log("Backpack websocket closed");
-  })
+  });
 };

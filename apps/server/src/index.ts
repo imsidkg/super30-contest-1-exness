@@ -1,85 +1,129 @@
-import express from 'express';
-import nodemailer from 'nodemailer';
-import jwt from 'jsonwebtoken';
-import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
-import { fetchBackpackData } from './websockets/backpackWebsocket';
+import express from "express";
+import nodemailer from "nodemailer";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
+import dotenv from "dotenv";
+import { fetchBackpackData } from "./websockets/backpackWebsocket";
+import { Kafka } from "kafkajs";
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 
+const kafka = new Kafka({
+  clientId: "create-order",
+  brokers: ["localhost:9092"],
+});
+
+const producer = kafka.producer();
+
 app.use(express.json());
 app.use(cookieParser());
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  service: "gmail",
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
 
-app.post('/signup', async (req, res) => {
+app.post("/signup", async (req, res) => {
   const { email } = req.body;
+  const initialBalance = 5000;
+  req.user = 
   if (!email) {
-    return res.status(400).send('Email is required');
+    return res.status(400).send("Email is required");
   }
 
-  const token = jwt.sign({ email }, process.env.JWT_SECRET as string, { expiresIn: '1h' });
+  const token = jwt.sign({ email }, process.env.JWT_SECRET as string, {
+    expiresIn: "1h",
+  });
   const magicLink = `${process.env.BASE_URL}/verify?token=${token}`;
 
   try {
     await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to: email,
-      subject: 'Your Magic Link',
+      subject: "Your Magic Link",
       html: `<p>Click <a href="${magicLink}">here</a> to log in.</p>`,
     });
-    res.send('Magic link sent to your email');
+    res.send("Magic link sent to your email");
   } catch (error) {
-    console.error('Error sending email:', error);
-    res.status(500).send('Error sending magic link');
+    console.error("Error sending email:", error);
+    res.status(500).send("Error sending magic link");
   }
 });
 
-app.get('/verify', (req, res) => {
+app.get("/verify", (req, res) => {
   const { token } = req.query;
 
   if (!token) {
-    return res.status(400).send('Token is required');
+    return res.status(400).send("Token is required");
   }
 
   try {
-    const decoded = jwt.verify(token as string, process.env.JWT_SECRET as string);
-    res.cookie('auth_token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production' });
-    res.redirect('/profile');
+    const decoded = jwt.verify(
+      token as string,
+      process.env.JWT_SECRET as string
+    );
+    res.cookie("auth_token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+    });
+    res.redirect("/profile");
   } catch (error) {
-    res.status(401).send('Invalid or expired token');
+    res.status(401).send("Invalid or expired token");
   }
 });
 
-const authenticateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const authenticateToken = (
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) => {
   const token = req.cookies.auth_token;
 
   if (!token) {
-    return res.status(401).send('Access Denied: No Token Provided');
+    return res.status(401).send("Access Denied: No Token Provided");
   }
 
   try {
     jwt.verify(token, process.env.JWT_SECRET as string);
     next();
   } catch (error) {
-    res.status(403).send('Invalid Token');
+    res.status(403).send("Invalid Token");
   }
 };
 
-app.get('/profile', authenticateToken, (req, res) => {
-  res.send('Welcome to your profile!');
+app.get("/profile", authenticateToken, (req, res) => {
+  res.send("Welcome to your profile!");
 });
 
-app.listen(port, () => {
+app.post("/api/v1/trade/createa", async (req, res) => {
+  const { asset, type, margin, leverage, slippage, priceForSlippag } = req.body;
+
+  await producer.send({
+    topic: "recieved-backpack-data",
+    messages: [
+      {
+        value: JSON.stringify({
+          asset,
+          type,
+          margin,
+          leverage,
+          slippage,
+          priceForSlippag,
+        }),
+      },
+    ],
+  });
+  res.status(200).json({ success: true, message: "Trade request submitted" });
+});
+
+app.listen(port, async() => {
   console.log(`Server running on http://localhost:${port}`);
-  fetchBackpackData(['SOL']);
+  await producer.connect();
+  fetchBackpackData(["SOL"]);
 });
