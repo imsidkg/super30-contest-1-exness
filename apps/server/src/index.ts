@@ -85,7 +85,6 @@ app.get("/verify", async (req, res) => {
   }
 });
 
-// Define a User type
 type User = {
   email: string;
   balance: number;

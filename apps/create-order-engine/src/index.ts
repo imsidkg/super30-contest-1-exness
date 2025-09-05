@@ -1,4 +1,5 @@
 import { Kafka } from "kafkajs";
+import fs from "fs";
 import { createOrder, calculateUnrealizedPnL } from "./createOrder"; 
 
 const kafka = new Kafka({
@@ -12,6 +13,7 @@ console.log("starting the engine 1");
 export const createOrderData: Map<string, any> = new Map();
 export const currentPrice: Map<string, number> = new Map();
 export const activeOrders: Map<number, any> = new Map(); 
+export const userData: Map<string, { balance: number }> = new Map();
 
 const consumeBackpackMessages = async () => {
   await backpackConsumer.connect();
@@ -52,22 +54,26 @@ const consumeBackpackMessages = async () => {
         }
         if (value.data === "trade") {
           const orderData = {
+            userEmail: value.userEmail,
             asset: value.asset,
             type: value.type,
             margin: value.margin,
             leverage: value.leverage,
             slippage: value.slippage,
             priceForSlippag: value.priceForSlippag,
-            userBalance: value.balance, 
+            userBalance: value.balance,
           };
+          userData.set(orderData.userEmail, { balance: orderData.userBalance });
 
           const assetCurrentPrice = currentPrice.get(orderData.asset);
 
           if (assetCurrentPrice !== undefined) {
             const newOrder = createOrder({ ...orderData, currentPrice: assetCurrentPrice });
-            activeOrders.set(newOrder!.orderId, newOrder);
-            console.log("Processed the trades details:", createOrderData); 
-            console.log("New Order Created and Stored:", newOrder);
+            if (newOrder) {
+              activeOrders.set(newOrder.orderId, newOrder);
+              console.log("Processed the trades details:", createOrderData); 
+              console.log("New Order Created and Stored:", newOrder);
+            }
           } else {
             console.warn(`Current price for asset ${orderData.asset} not available. Order not created.`);
           }
@@ -78,3 +84,48 @@ const consumeBackpackMessages = async () => {
 };
 
 consumeBackpackMessages().catch(console.error);
+
+setInterval(() => {
+          const snapshotFilePath = 'snapshots.json';
+
+          fs.readFile(snapshotFilePath, 'utf8', (err, data) => {
+            let snapshots = [];
+            if (!err && data) {
+              try {
+                snapshots = JSON.parse(data);
+                if (!Array.isArray(snapshots)) {
+                  snapshots = [];
+                }
+              } catch (e) {
+                snapshots = [];
+              }
+            }
+
+            for (const [userEmail, userDataValue] of userData.entries()) {
+              const userOrders = Array.from(activeOrders.values()).filter(order => order.userEmail === userEmail);
+              const existingSnapshotIndex = snapshots.findIndex(snap => snap.userId === userEmail);
+
+              const newSnapshot = {
+                userId: userEmail,
+                balance: userDataValue.balance,
+                openOrders: userOrders,
+                prices: Object.fromEntries(currentPrice.entries()),
+                timestamp: new Date().toISOString(),
+              };
+
+              if (existingSnapshotIndex !== -1) {
+                snapshots[existingSnapshotIndex] = newSnapshot;
+              } else {
+                snapshots.push(newSnapshot);
+              }
+            }
+
+            fs.writeFile(snapshotFilePath, JSON.stringify(snapshots, null, 2), (err) => {
+              if (err) {
+                console.error('Error writing snapshot to file:', err);
+              } else {
+                console.log('Successfully updated snapshots.json');
+              }
+            });
+          });
+        }, 10000);

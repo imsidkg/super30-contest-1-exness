@@ -1,6 +1,6 @@
 
-export const createOrder = ({ userBalance, margin, asset, type, leverage = 1, slippage, priceForSlippag, currentPrice }: { userBalance: number, margin: number, asset: string, type: 'buy' | 'sell', leverage: number, slippage: number, priceForSlippag: number, currentPrice: number }) => {
- 
+export const createOrder = ({ userEmail , userBalance, margin, asset, type, leverage = 1, slippage, priceForSlippag, currentPrice }: { userEmail:string ,userBalance: number, margin: number, asset: string, type: 'buy' | 'sell', leverage: number, slippage: number, priceForSlippag: number, currentPrice: number }) => {
+ //todo : update teh balance after crateing the order
     let isSlippageAcceptable = false;
     if (type === "buy") {
         if (currentPrice <= priceForSlippag * (1 + slippage)) {
@@ -30,6 +30,7 @@ export const createOrder = ({ userBalance, margin, asset, type, leverage = 1, sl
 
     const order = {
         orderId,
+        userEmail,
         asset,
         type,
         margin,
