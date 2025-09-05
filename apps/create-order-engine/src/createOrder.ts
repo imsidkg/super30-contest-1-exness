@@ -1,60 +1,91 @@
+export const createOrder = ({
+  userEmail,
+  userBalance,
+  margin,
+  asset,
+  type,
+  leverage = 1,
+  slippage,
+  currentPrice,
+}: {
+  userEmail: string;
+  userBalance: number;
+  margin: number;
+  asset: string;
+  type: "long" | "short";
+  leverage: number;
+  slippage: number;
+  currentPrice: number;
+}) => {
+  // For market orders without priceForSlippage, we need to implement a different approach
+  // One option is to use a recent average price or implement a price validation mechanism
+  // For now, we'll proceed with the order creation using current market price
+  
+  const orderId = Math.floor(Math.random() * 1000000);
 
-export const createOrder = ({ userEmail , userBalance, margin, asset, type, leverage = 1, slippage, priceForSlippag, currentPrice }: { userEmail:string ,userBalance: number, margin: number, asset: string, type: 'buy' | 'sell', leverage: number, slippage: number, priceForSlippag: number, currentPrice: number }) => {
- //todo : update teh balance after crateing the order
-    let isSlippageAcceptable = false;
-    if (type === "buy") {
-        if (currentPrice <= priceForSlippag * (1 + slippage)) {
-            isSlippageAcceptable = true;
-        }
-    } else if (type === "sell") {
-        if (currentPrice >= priceForSlippag * (1 - slippage)) {
-            isSlippageAcceptable = true;
-        }
-    }
+  let quantity: number;
+  if (type === "long" || type === "short") {
+    quantity = (margin * leverage) / currentPrice;
+    userBalance = userBalance - margin;
+  } else {
+    throw new Error("Invalid order type. Must be 'long' or 'short'.");
+  }
 
-    if (!isSlippageAcceptable) {
-        console.warn(`Order not created due to unacceptable slippage. Asset: ${asset}, Type: ${type}, Intended Price: ${priceForSlippag}, Current Price: ${currentPrice}, Slippage: ${slippage}`);
-        return null; 
-    }
+  const unrealizedPnL = calculateUnrealizedPnL(
+    type,
+    quantity,
+    currentPrice,
+    currentPrice
+  );
 
-    const orderId = Math.floor(Math.random() * 1000000);  
+  const order = {
+    orderId,
+    userEmail,
+    asset,
+    type,
+    margin,
+    leverage,
+    slippage,
+    entryPrice: currentPrice,
+    currentPrice,
+    quantity,
+    unrealizedPnL,
+    userBalance,
+  };
 
-    let quantity: number;
-    if (type === "buy" || type === "sell") { 
-        quantity = (margin * leverage) / priceForSlippag;
-    } else {
-        throw new Error("Invalid order type. Must be 'buy' or 'sell'.");
-    }
+  console.log("Created Order:", order);
+  console.log("Unrealized PnL:", unrealizedPnL);
 
-    const unrealizedPnL = calculateUnrealizedPnL(type, quantity, priceForSlippag, currentPrice);
-
-    const order = {
-        orderId,
-        userEmail,
-        asset,
-        type,
-        margin,
-        leverage,
-        slippage,
-        priceForSlippag, 
-        currentPrice,    
-        quantity,
-        unrealizedPnL,
-    };
-
-    console.log("Created Order:", order);
-    console.log("Unrealized PnL:", unrealizedPnL);
-
-    return order;
+  return order;
 };
 
-export const calculateUnrealizedPnL = (type: 'buy' | 'sell', quantity: number, entryPrice: number, currentPrice: number): number => {
-    if (type === "buy") {
-        return (currentPrice - entryPrice) * quantity;
-    } else if (type === "sell") {
-        return (entryPrice - currentPrice) * quantity;
-    }
-    return 0;
-}
+// Slippage check function for market orders
+export const checkSlippage = (
+  type: "long" | "short",
+  expectedPrice: number,
+  actualPrice: number,
+  slippage: number
+): boolean => {
+  if (type === "long") {
+    // For long positions, actual price should not be higher than expected + slippage
+    return actualPrice <= expectedPrice * (1 + slippage);
+  } else if (type === "short") {
+    // For short positions, actual price should not be lower than expected - slippage
+    return actualPrice >= expectedPrice * (1 - slippage);
+  }
+  return false;
+};
 
-
+export const calculateUnrealizedPnL = (
+  type: "long" | "short",
+  quantity: number,
+  entryPrice: number,
+  currentPrice: number
+): number => {
+  if (type === "long") {
+    return (currentPrice - entryPrice) * quantity;
+  } else if (type === "short") {
+    return (entryPrice - currentPrice) * quantity;
+  }
+  return 0;
+};

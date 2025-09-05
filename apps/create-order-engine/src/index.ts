@@ -1,6 +1,6 @@
 import { Kafka } from "kafkajs";
 import fs from "fs";
-import { createOrder, calculateUnrealizedPnL } from "./createOrder"; 
+import { createOrder, calculateUnrealizedPnL, checkSlippage } from "./createOrder";
 
 const kafka = new Kafka({
   clientId: "create-order",
@@ -8,11 +8,10 @@ const kafka = new Kafka({
 });
 const backpackConsumer = kafka.consumer({ groupId: "recieved-backpack-data" });
 
-
 console.log("starting the engine 1");
 export const createOrderData: Map<string, any> = new Map();
 export const currentPrice: Map<string, number> = new Map();
-export const activeOrders: Map<number, any> = new Map(); 
+export const activeOrders: Map<number, any> = new Map();
 export const userData: Map<string, { balance: number }> = new Map();
 
 const consumeBackpackMessages = async () => {
@@ -36,16 +35,18 @@ const consumeBackpackMessages = async () => {
               const adjustedPrice = update.price / Math.pow(10, update.decimal);
               currentPrice.set(update.asset, adjustedPrice);
 
-              activeOrders.forEach(order => {
+              activeOrders.forEach((order) => {
                 if (order.asset === update.asset) {
                   const updatedUnrealizedPnL = calculateUnrealizedPnL(
                     order.type,
                     order.quantity,
-                    order.priceForSlippag,
+                    order.entryPrice,
                     adjustedPrice
                   );
                   order.unrealizedPnL = updatedUnrealizedPnL;
-                  console.log(`Order ${order.orderId} - Updated Unrealized PnL for ${order.asset}: ${updatedUnrealizedPnL}`);
+                  console.log(
+                    `Order ${order.orderId} - Updated Unrealized PnL for ${order.asset}: ${updatedUnrealizedPnL}`
+                  );
                 }
               });
             }
@@ -60,22 +61,46 @@ const consumeBackpackMessages = async () => {
             margin: value.margin,
             leverage: value.leverage,
             slippage: value.slippage,
-            priceForSlippag: value.priceForSlippag,
+            requestPrice: value.requestPrice,
+            requestTimestamp: value.requestTimestamp,
             userBalance: value.balance,
           };
           userData.set(orderData.userEmail, { balance: orderData.userBalance });
 
           const assetCurrentPrice = currentPrice.get(orderData.asset);
-
           if (assetCurrentPrice !== undefined) {
-            const newOrder = createOrder({ ...orderData, currentPrice: assetCurrentPrice });
+            // Check slippage before creating order
+            const isSlippageAcceptable = checkSlippage(
+              orderData.type,
+              orderData.requestPrice,
+              assetCurrentPrice,
+              orderData.slippage
+            );
+
+            if (!isSlippageAcceptable) {
+              console.warn(
+                `Order rejected due to slippage. Asset: ${orderData.asset}, ` +
+                `Request Price: ${orderData.requestPrice}, Current Price: ${assetCurrentPrice}, ` +
+                `Slippage: ${orderData.slippage}`
+              );
+              return;
+            }
+
+            const newOrder = createOrder({
+              ...orderData,
+              currentPrice: assetCurrentPrice,
+            });
             if (newOrder) {
+              
               activeOrders.set(newOrder.orderId, newOrder);
-              console.log("Processed the trades details:", createOrderData); 
+              console.log("reached here")
+              console.log("Processed the trades details:", createOrderData);
               console.log("New Order Created and Stored:", newOrder);
             }
           } else {
-            console.warn(`Current price for asset ${orderData.asset} not available. Order not created.`);
+            console.warn(
+              `Current price for asset ${orderData.asset} not available. Order not created.`
+            );
           }
         }
       }
@@ -86,46 +111,53 @@ const consumeBackpackMessages = async () => {
 consumeBackpackMessages().catch(console.error);
 
 setInterval(() => {
-          const snapshotFilePath = 'snapshots.json';
+  const snapshotFilePath = "snapshots.json";
 
-          fs.readFile(snapshotFilePath, 'utf8', (err, data) => {
-            let snapshots = [];
-            if (!err && data) {
-              try {
-                snapshots = JSON.parse(data);
-                if (!Array.isArray(snapshots)) {
-                  snapshots = [];
-                }
-              } catch (e) {
-                snapshots = [];
-              }
-            }
+  fs.readFile(snapshotFilePath, "utf8", (err, data) => {
+    let snapshots = [];
+    if (!err && data) {
+      try {
+        snapshots = JSON.parse(data);
+        if (!Array.isArray(snapshots)) {
+          snapshots = [];
+        }
+      } catch (e) {
+        snapshots = [];
+      }
+    }
+    for (const [userEmail, userDataValue] of userData.entries()) {
+      const userOrders = Array.from(activeOrders.values()).filter(
+        (order) => order.userEmail === userEmail
+      );
+      const existingSnapshotIndex = snapshots.findIndex(
+        (snap) => snap.userId === userEmail
+      );
 
-            for (const [userEmail, userDataValue] of userData.entries()) {
-              const userOrders = Array.from(activeOrders.values()).filter(order => order.userEmail === userEmail);
-              const existingSnapshotIndex = snapshots.findIndex(snap => snap.userId === userEmail);
+      const newSnapshot = {
+        userId: userEmail,
+        balance: userDataValue.balance,
+        openOrders: userOrders,
+        prices: Object.fromEntries(currentPrice.entries()),
+        timestamp: new Date().toISOString(),
+      };
 
-              const newSnapshot = {
-                userId: userEmail,
-                balance: userDataValue.balance,
-                openOrders: userOrders,
-                prices: Object.fromEntries(currentPrice.entries()),
-                timestamp: new Date().toISOString(),
-              };
+      if (existingSnapshotIndex !== -1) {
+        snapshots[existingSnapshotIndex] = newSnapshot;
+      } else {
+        snapshots.push(newSnapshot);
+      }
+    }
 
-              if (existingSnapshotIndex !== -1) {
-                snapshots[existingSnapshotIndex] = newSnapshot;
-              } else {
-                snapshots.push(newSnapshot);
-              }
-            }
-
-            fs.writeFile(snapshotFilePath, JSON.stringify(snapshots, null, 2), (err) => {
-              if (err) {
-                console.error('Error writing snapshot to file:', err);
-              } else {
-                console.log('Successfully updated snapshots.json');
-              }
-            });
-          });
-        }, 10000);
+    fs.writeFile(
+      snapshotFilePath,
+      JSON.stringify(snapshots, null, 2),
+      (err) => {
+        if (err) {
+          console.error("Error writing snapshot to file:", err);
+        } else {
+          console.log("Successfully updated snapshots.json");
+        }
+      }
+    );
+  });
+}, 10000);

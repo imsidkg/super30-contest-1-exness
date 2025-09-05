@@ -7,6 +7,9 @@ import { fetchBackpackData } from "./websockets/backpackWebsocket";
 import { Kafka } from "kafkajs";
 import { redis } from "./lib/redisClient";
 
+// Shared price storage for timestamp-based slippage validation
+export const currentPrices: Map<string, { price: number; timestamp: number }> = new Map();
+
 dotenv.config();
 
 const app = express();
@@ -125,11 +128,17 @@ app.get("/profile", authenticateToken, (req, res) => {
 });
 
 app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
-  const { asset, type, margin, leverage, slippage, priceForSlippag } = req.body;
+  const { asset, type, margin, leverage, slippage } = req.body;
   const user = res.locals.user as User;
   await producer.connect();
   if (!user || !user.email) {
     return res.status(401).send("User not authenticated.");
+  }
+
+  // Get current price for slippage validation
+  const currentPriceData = currentPrices.get(asset);
+  if (!currentPriceData) {
+    return res.status(400).send(`Current price not available for ${asset}`);
   }
 
   await producer.send({
@@ -143,14 +152,14 @@ app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
           margin,
           leverage,
           slippage,
-          priceForSlippag,
+          requestPrice: currentPriceData.price,
+          requestTimestamp: currentPriceData.timestamp,
           balance: user.balance,
           userEmail: user.email,
         }),
       },
     ],
   });
-
 
   
   res.status(200).json({ success: true, message: "Trade request submitted" });

@@ -1,121 +1,54 @@
 [
   {
-    "timestamp": "2025-09-05T07:37:41.253Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
+    "userId": "siddharth8271skg2@gmail.com",
     "balance": 5000,
-    "openOrders": [],
+    "openOrders": [
+      {
+        "orderId": 218317,
+        "userEmail": "siddharth8271skg2@gmail.com",
+        "asset": "SOL",
+        "type": "long",
+        "margin": 500,
+        "leverage": 10,
+        "slippage": 0.01,
+        "entryPrice": 209.7,
+        "currentPrice": 209.7,
+        "quantity": 23.843586075345733,
+        "unrealizedPnL": 5.960896518836433,
+        "userBalance": 4500
+      },
+      {
+        "orderId": 717952,
+        "userEmail": "siddharth8271skg2@gmail.com",
+        "asset": "SOL",
+        "type": "long",
+        "margin": 500,
+        "leverage": 10,
+        "slippage": 0.01,
+        "entryPrice": 209.81,
+        "currentPrice": 209.81,
+        "quantity": 23.831085267623088,
+        "unrealizedPnL": 3.3363519374669073,
+        "userBalance": 4500
+      },
+      {
+        "orderId": 668268,
+        "userEmail": "siddharth8271skg2@gmail.com",
+        "asset": "SOL",
+        "type": "long",
+        "margin": 500,
+        "leverage": 10,
+        "slippage": 0.01,
+        "entryPrice": 209.93,
+        "currentPrice": 209.93,
+        "quantity": 23.81746296384509,
+        "unrealizedPnL": 0.4763492592764686,
+        "userBalance": 4500
+      }
+    ],
     "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:37:51.254Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:38:01.254Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:38:11.255Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:38:21.255Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:38:31.254Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:38:41.254Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:38:51.254Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:39:01.255Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:39:11.254Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
-  }
-]
-[
-  {
-    "timestamp": "2025-09-05T07:39:21.254Z",
-    "userEmail": "siddharth8271skg2@gmail.com",
-    "balance": 5000,
-    "openOrders": [],
-    "prices": {
-      "SOL": 207.76
-    }
+      "SOL": 209.95
+    },
+    "timestamp": "2025-09-05T13:57:20.917Z"
   }
 ]

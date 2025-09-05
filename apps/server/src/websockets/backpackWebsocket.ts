@@ -1,5 +1,6 @@
 import { Kafka } from "kafkajs";
 import Websocket, { RawData } from "ws";
+import { currentPrices } from "../index";
 
 export const fetchBackpackData = async (symbols: string[]) => {
   const url = "wss://ws.backpack.exchange/";
@@ -56,6 +57,13 @@ export const fetchBackpackData = async (symbols: string[]) => {
             },
           ],
         };
+
+        // Store the current price for timestamp-based slippage validation
+        const adjustedPrice = scaledPrice / Math.pow(10, decimal);
+        currentPrices.set(asset, {
+          price: adjustedPrice,
+          timestamp: Date.now()
+        });
 
         await producer.send({
           topic: "recieved-backpack-data",
