@@ -6,6 +6,9 @@ import dotenv from "dotenv";
 import { fetchBackpackData } from "./websockets/backpackWebsocket";
 import { Kafka } from "kafkajs";
 import { redis } from "./lib/redisClient";
+import { v4 as uuidv4 } from 'uuid';
+
+const pendingOrderRequests = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
 
 // Shared price storage for timestamp-based slippage validation
 export const currentPrices: Map<string, { price: number; timestamp: number }> =
@@ -142,6 +145,12 @@ app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
     return res.status(400).send(`Current price not available for ${asset}`);
   }
 
+  const requestId = uuidv4();
+
+  const orderPromise = new Promise((resolve, reject) => {
+    pendingOrderRequests.set(requestId, { resolve, reject });
+  });
+
   await producer.send({
     topic: "recieved-backpack-data",
     messages: [
@@ -157,14 +166,21 @@ app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
           requestTimestamp: currentPriceData.timestamp,
           balance: user.balance,
           userEmail: user.email,
+          requestId: requestId, // Include requestId
         }),
       },
     ],
   });
 
-  res
-    .status(200)
-    .json({ success: true, message: "Trade request submitted" });
+  try {
+    const orderId = await orderPromise;
+    res.status(200).json({ success: true, orderId: orderId });
+  } catch (error) {
+    console.error("Error processing order:", error);
+    res.status(500).json({ success: false, message: "Error processing order" });
+  } finally {
+    pendingOrderRequests.delete(requestId);
+  }
 });
 
 app.listen(port, async () => {
