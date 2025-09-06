@@ -1,12 +1,17 @@
 import { Kafka } from "kafkajs";
 import fs from "fs";
-import { createOrder, calculateUnrealizedPnL, checkSlippage } from "./createOrder";
+import {
+  createOrder,
+  calculateUnrealizedPnL,
+  checkSlippage,
+} from "./createOrder";
 
 const kafka = new Kafka({
   clientId: "create-order",
   brokers: ["localhost:9092"],
 });
 const backpackConsumer = kafka.consumer({ groupId: "recieved-backpack-data" });
+const tradeProducer = kafka.producer();
 
 console.log("starting the engine 1");
 export const createOrderData: Map<string, any> = new Map();
@@ -16,6 +21,7 @@ export const userData: Map<string, { balance: number }> = new Map();
 
 const consumeBackpackMessages = async () => {
   await backpackConsumer.connect();
+  await tradeProducer.connect();
   await backpackConsumer.subscribe({
     topic: "recieved-backpack-data",
     fromBeginning: true,
@@ -80,8 +86,8 @@ const consumeBackpackMessages = async () => {
             if (!isSlippageAcceptable) {
               console.warn(
                 `Order rejected due to slippage. Asset: ${orderData.asset}, ` +
-                `Request Price: ${orderData.requestPrice}, Current Price: ${assetCurrentPrice}, ` +
-                `Slippage: ${orderData.slippage}`
+                  `Request Price: ${orderData.requestPrice}, Current Price: ${assetCurrentPrice}, ` +
+                  `Slippage: ${orderData.slippage}`
               );
               return;
             }
@@ -90,13 +96,22 @@ const consumeBackpackMessages = async () => {
               ...orderData,
               currentPrice: assetCurrentPrice,
             });
+
+            
             if (newOrder) {
-              
               activeOrders.set(newOrder.orderId, newOrder);
-              console.log("reached here")
+              console.log("reached here");
               console.log("Processed the trades details:", createOrderData);
               console.log("New Order Created and Stored:", newOrder);
             }
+            await tradeProducer.send({
+              topic: "trade-data",
+              messages: [
+                {
+                  value: JSON.stringify(newOrder),
+                },
+              ],
+            });
           } else {
             console.warn(
               `Current price for asset ${orderData.asset} not available. Order not created.`

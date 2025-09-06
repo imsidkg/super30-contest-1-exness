@@ -8,7 +8,8 @@ import { Kafka } from "kafkajs";
 import { redis } from "./lib/redisClient";
 
 // Shared price storage for timestamp-based slippage validation
-export const currentPrices: Map<string, { price: number; timestamp: number }> = new Map();
+export const currentPrices: Map<string, { price: number; timestamp: number }> =
+  new Map();
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ export const kafka = new Kafka({
 });
 
 const producer = kafka.producer();
+const tradeConsumer = kafka.consumer({ groupId: "recieved-trade-data" });
 
 app.use(express.json());
 app.use(cookieParser());
@@ -130,12 +132,11 @@ app.get("/profile", authenticateToken, (req, res) => {
 app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
   const { asset, type, margin, leverage, slippage } = req.body;
   const user = res.locals.user as User;
-  await producer.connect();
+
   if (!user || !user.email) {
     return res.status(401).send("User not authenticated.");
   }
 
-  // Get current price for slippage validation
   const currentPriceData = currentPrices.get(asset);
   if (!currentPriceData) {
     return res.status(400).send(`Current price not available for ${asset}`);
@@ -161,8 +162,9 @@ app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
     ],
   });
 
-  
-  res.status(200).json({ success: true, message: "Trade request submitted" });
+  res
+    .status(200)
+    .json({ success: true, message: "Trade request submitted" });
 });
 
 app.listen(port, async () => {
@@ -171,6 +173,11 @@ app.listen(port, async () => {
   try {
     await producer.connect();
     console.log("Kafka producer connected");
+    await tradeConsumer.connect();
+    await tradeConsumer.subscribe({
+      topic: "trade-data",
+      fromBeginning: true,
+    });
   } catch (err) {
     console.error(" Failed to connect Kafka producer", err);
     process.exit(1);
@@ -181,6 +188,7 @@ app.listen(port, async () => {
   process.on("SIGINT", async () => {
     console.log("Disconnecting Kafka producer...");
     await producer.disconnect();
+    await tradeConsumer.disconnect()
     process.exit(0);
   });
 });
