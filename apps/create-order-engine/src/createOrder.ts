@@ -7,6 +7,7 @@ export const createOrder = ({
   leverage = 1,
   slippage,
   currentPrice,
+  requestId,
 }: {
   userEmail: string;
   userBalance: number;
@@ -16,6 +17,7 @@ export const createOrder = ({
   leverage: number;
   slippage: number;
   currentPrice: number;
+  requestId: string;
 }) => {
   // For market orders without priceForSlippage, we need to implement a different approach
   // One option is to use a recent average price or implement a price validation mechanism
@@ -51,6 +53,7 @@ export const createOrder = ({
     quantity,
     unrealizedPnL,
     userBalance,
+    requestId,
   };
 
   console.log("Created Order:", order);

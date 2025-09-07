@@ -70,6 +70,7 @@ const consumeBackpackMessages = async () => {
             requestPrice: value.requestPrice,
             requestTimestamp: value.requestTimestamp,
             userBalance: value.balance,
+            requestId: value.requestId, // Pass requestId
           };
           userData.set(orderData.userEmail, { balance: orderData.userBalance });
 

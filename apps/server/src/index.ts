@@ -10,7 +10,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 const pendingOrderRequests = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
 
-// Shared price storage for timestamp-based slippage validation
 export const currentPrices: Map<string, { price: number; timestamp: number }> =
   new Map();
 
@@ -132,7 +131,7 @@ app.get("/profile", authenticateToken, (req, res) => {
   res.send(`Welcome to your profile! Your balance is: ${user.balance}`);
 });
 
-app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
+app.post("/api/v1/trade/create", authenticateToken, async (req, res) => {
   const { asset, type, margin, leverage, slippage } = req.body;
   const user = res.locals.user as User;
 
@@ -166,7 +165,7 @@ app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
           requestTimestamp: currentPriceData.timestamp,
           balance: user.balance,
           userEmail: user.email,
-          requestId: requestId, // Include requestId
+          requestId: requestId,
         }),
       },
     ],
@@ -180,7 +179,7 @@ app.post("/api/v1/trade/createa", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: "Error processing order" });
   } finally {
     pendingOrderRequests.delete(requestId);
-  }
+  } 
 });
 
 app.listen(port, async () => {
@@ -193,6 +192,18 @@ app.listen(port, async () => {
     await tradeConsumer.subscribe({
       topic: "trade-data",
       fromBeginning: true,
+    });
+    await tradeConsumer.run({
+      eachMessage: async ({ topic, partition, message }) => {
+        if (message.value) {
+          const orderData = JSON.parse(message.value.toString());
+          const requestId = orderData.requestId;
+          if (pendingOrderRequests.has(requestId)) {
+            const { resolve } = pendingOrderRequests.get(requestId)!;
+            resolve(orderData.orderId);
+          }
+        }
+      },
     });
   } catch (err) {
     console.error(" Failed to connect Kafka producer", err);
