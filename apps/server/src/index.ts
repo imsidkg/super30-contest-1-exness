@@ -6,9 +6,13 @@ import dotenv from "dotenv";
 import { fetchBackpackData } from "./websockets/backpackWebsocket";
 import { Kafka } from "kafkajs";
 import { redis } from "./lib/redisClient";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
+import { resolve } from "path";
 
-const pendingOrderRequests = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void }>();
+const pendingOrderRequests = new Map<
+  string,
+  { resolve: (value: any) => void; reject: (reason?: any) => void }
+>();
 
 export const currentPrices: Map<string, { price: number; timestamp: number }> =
   new Map();
@@ -179,7 +183,38 @@ app.post("/api/v1/trade/create", authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: "Error processing order" });
   } finally {
     pendingOrderRequests.delete(requestId);
-  } 
+  }
+});
+
+app.post("/api/v1/close", authenticateToken, async (req, res) => {
+  const { orderId } = req.body;
+
+  const requestId = uuidv4();
+  const orderPromise = new Promise((resolve, reject) => {
+    pendingOrderRequests.set(requestId, { resolve, reject });
+  });
+
+  producer.send({
+    topic: "close-order-data",
+    messages: [
+      {
+        value: JSON.stringify({
+          orderId,
+          data: "close-trade",
+          requestId,
+        }),
+      },
+    ],
+  });
+  try {
+    const closedOrder = await orderPromise;
+    res.status(200).json({ success: true, orderId: closedOrder });
+  } catch (error) {
+    console.error("Error closing order:", error);
+    res.status(500).json({ success: false, message: "Error closing order" });
+  } finally {
+    pendingOrderRequests.delete(requestId);
+  }
 });
 
 app.listen(port, async () => {
@@ -190,7 +225,7 @@ app.listen(port, async () => {
     console.log("Kafka producer connected");
     await tradeConsumer.connect();
     await tradeConsumer.subscribe({
-      topic: "trade-data",
+      topics: ["trade-data", "closed-trade-notifications"],
       fromBeginning: true,
     });
     await tradeConsumer.run({
@@ -198,9 +233,20 @@ app.listen(port, async () => {
         if (message.value) {
           const orderData = JSON.parse(message.value.toString());
           const requestId = orderData.requestId;
-          if (pendingOrderRequests.has(requestId)) {
-            const { resolve } = pendingOrderRequests.get(requestId)!;
-            resolve(orderData.orderId);
+          if (orderData.data === "trade") {
+            if (pendingOrderRequests.has(requestId)) {
+              const { resolve } = pendingOrderRequests.get(requestId)!;
+              resolve(orderData.orderId);
+            }
+          } else if (orderData.data === "trade-closed-confirmation") {
+            if (pendingOrderRequests.has(requestId)) {
+              const { resolve } = pendingOrderRequests.get(requestId)!;
+
+              resolve(orderData);
+            }
+            if (orderData.userEmail && orderData.updatedBalance !== undefined) {
+              await redis.set(`user:${orderData.userEmail}:balance`, orderData.updatedBalance.toString());
+            }
           }
         }
       },
@@ -215,7 +261,7 @@ app.listen(port, async () => {
   process.on("SIGINT", async () => {
     console.log("Disconnecting Kafka producer...");
     await producer.disconnect();
-    await tradeConsumer.disconnect()
+    await tradeConsumer.disconnect();
     process.exit(0);
   });
 });

@@ -12,6 +12,7 @@ const kafka = new Kafka({
 });
 const backpackConsumer = kafka.consumer({ groupId: "recieved-backpack-data" });
 const tradeProducer = kafka.producer();
+const tradeConsumer = kafka.consumer({ groupId: "close-trade-data" });
 
 console.log("starting the engine 1");
 export const createOrderData: Map<string, any> = new Map();
@@ -21,9 +22,14 @@ export const userData: Map<string, { balance: number }> = new Map();
 
 const consumeBackpackMessages = async () => {
   await backpackConsumer.connect();
+  await tradeConsumer.connect();
   await tradeProducer.connect();
   await backpackConsumer.subscribe({
     topic: "recieved-backpack-data",
+    fromBeginning: true,
+  });
+  await tradeConsumer.subscribe({
+    topic: "close-order-data",
     fromBeginning: true,
   });
   await backpackConsumer.run({
@@ -98,7 +104,6 @@ const consumeBackpackMessages = async () => {
               currentPrice: assetCurrentPrice,
             });
 
-            
             if (newOrder) {
               activeOrders.set(newOrder.orderId, newOrder);
               console.log("reached here");
@@ -109,7 +114,7 @@ const consumeBackpackMessages = async () => {
               topic: "trade-data",
               messages: [
                 {
-                  value: JSON.stringify(newOrder),
+                  value: JSON.stringify({ ...newOrder, requestId: orderData.requestId, data: "trade" }),
                 },
               ],
             });
@@ -119,6 +124,76 @@ const consumeBackpackMessages = async () => {
             );
           }
         }
+
+        tradeConsumer.run({
+          eachMessage: async ({ topic, partition, message }) => {
+            if (message.value) {
+              const orderData = JSON.parse(message.value.toString());
+              const requestId = orderData.requestId;
+              const orderIdToClose = orderData.orderId;
+
+              if (orderData.data === "close-trade") {
+                const orderToClose = activeOrders.get(orderIdToClose);
+                if (!orderToClose) {
+                  console.warn(
+                    `Attempted to close non-existent or already closed order: ${orderIdToClose}`
+                  );
+
+                  return;
+                }
+
+                const assetCurrentPrice = currentPrice.get(orderToClose.asset);
+                if (assetCurrentPrice === undefined) {
+                  console.warn(
+                    `Current price not available for ${orderToClose.asset}. Cannot close order ${orderIdToClose}.`
+                  );
+
+                  return;
+                }
+
+                const realizedPnl = calculateUnrealizedPnL(
+                  orderToClose.type,
+                  orderToClose.quantity,
+                  orderToClose.entryPrice,
+                  assetCurrentPrice
+                );
+
+                orderToClose.status = "closed";
+                orderToClose.closePrice = assetCurrentPrice;
+                orderToClose.closeTimestamp = new Date().toISOString();
+                orderToClose.pnl = realizedPnl;
+                const user = userData.get(orderToClose.userEmail);
+                if (user) {
+                  user.balance += realizedPnl;
+                  userData.set(orderToClose.userEmail, user);
+                }
+
+                activeOrders.delete(orderIdToClose);
+                console.log(
+                  `Order ${orderIdToClose} manually closed. Realized PnL: ${realizedPnl}`
+                );
+
+                await tradeProducer.send({
+                  topic: "closed-trade-notifications",
+                  messages: [
+                    {
+                      value: JSON.stringify({
+                        data: "trade-closed-confirmation",
+                        requestId: requestId,
+                        orderId: orderIdToClose,
+                        pnl: realizedPnl,
+                        closePrice: assetCurrentPrice,
+                        closeTimestamp: orderToClose.closeTimestamp,
+                        userEmail: orderToClose.userEmail,
+                        updatedBalance: user ? user.balance : undefined,
+                      }),
+                    },
+                  ],
+                });
+              }
+            }
+          },
+        });
       }
     },
   });
