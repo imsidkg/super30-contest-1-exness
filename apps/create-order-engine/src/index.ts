@@ -13,6 +13,7 @@ const kafka = new Kafka({
 const backpackConsumer = kafka.consumer({ groupId: "recieved-backpack-data" });
 const tradeProducer = kafka.producer();
 const tradeConsumer = kafka.consumer({ groupId: "close-trade-data" });
+const queryConsumer = kafka.consumer({ groupId: "query-open-orders" });
 
 console.log("starting the engine 1");
 export const createOrderData: Map<string, any> = new Map();
@@ -222,6 +223,50 @@ const consumeBackpackMessages = async () => {
                   closeTimestamp: orderToClose.closeTimestamp,
                   userEmail: orderToClose.userEmail,
                   updatedBalance: user ? user.balance : undefined,
+                }),
+              },
+            ],
+          });
+        }
+      }
+    },
+  });
+
+  await queryConsumer.connect();
+  await queryConsumer.subscribe({
+    topic: "query-open-orders",
+    fromBeginning: true,
+  });
+
+  await queryConsumer.run({
+    eachMessage: async ({ topic, partition, message }) => {
+      if (message.value) {
+        const queryData = JSON.parse(message.value.toString());
+        if (queryData.data === "query-open-orders") {
+          const userEmail = queryData.userEmail;
+          const requestId = queryData.requestId;
+
+          const userOrders = Array.from(activeOrders.values()).filter(
+            (order) => order.userEmail === userEmail
+          );
+
+          const assetBalances: Record<string, { balance: number; decimals: number }> = {};
+
+          userOrders.forEach((order) => {
+            if (!assetBalances[order.asset]) {
+              assetBalances[order.asset] = { balance: 0, decimals: 8 };
+            }
+            assetBalances[order.asset]!.balance += order.quantity;
+          });
+
+          await tradeProducer.send({
+            topic: "open-orders-response",
+            messages: [
+              {
+                value: JSON.stringify({
+                  data: "open-orders-response",
+                  requestId: requestId,
+                  balances: assetBalances,
                 }),
               },
             ],

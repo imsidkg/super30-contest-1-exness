@@ -29,6 +29,7 @@ export const kafka = new Kafka({
 
 const producer = kafka.producer();
 const tradeConsumer = kafka.consumer({ groupId: "recieved-trade-data" });
+const balanceResponseConsumer = kafka.consumer({ groupId: "balance-response" });
 
 app.use(express.json());
 app.use(cookieParser());
@@ -217,6 +218,72 @@ app.post("/api/v1/close", authenticateToken, async (req, res) => {
   }
 });
 
+app.get("/api/v1/balance/usd", authenticateToken, (req, res) => {
+  const user = res.locals.user as User;
+  res.json({ balance: user.balance });
+});
+
+app.get("/api/v1/balance", authenticateToken, async (req, res) => {
+  const user = res.locals.user as User;
+  const requestId = uuidv4();
+
+  const balancePromise = new Promise((resolve, reject) => {
+    pendingOrderRequests.set(requestId, { resolve, reject });
+    
+    setTimeout(() => {
+      if (pendingOrderRequests.has(requestId)) {
+        pendingOrderRequests.delete(requestId);
+        resolve({});
+      }
+    }, 5000);
+  });
+
+  await producer.send({
+    topic: "query-open-orders",
+    messages: [
+      {
+        value: JSON.stringify({
+          data: "query-open-orders",
+          userEmail: user.email,
+          requestId: requestId,
+        }),
+      },
+    ],
+  });
+
+  try {
+    const openOrders = await balancePromise;
+    res.json(openOrders);
+  } catch (error) {
+    console.error("Error fetching open orders:", error);
+    res.status(500).json({ error: "Failed to fetch open orders" });
+  } finally {
+    pendingOrderRequests.delete(requestId);
+  }
+});
+
+app.get("/api/v1/supportedAssets", (req, res) => {
+  res.json({
+    assets: [
+      {
+        symbol: "BTC",
+        name: "Bitcoin",
+        imageUrl: "https://cryptologos.cc/logos/bitcoin-btc-logo.png"
+      },
+      {
+        symbol: "SOL",
+        name: "Solana", 
+        imageUrl: "https://cryptologos.cc/logos/solana-sol-logo.png"
+      },
+      {
+        symbol: "ETH",
+        name: "Ethereum",
+        imageUrl: "https://cryptologos.cc/logos/ethereum-eth-logo.png"
+      }
+    ]
+  });
+});
+
 app.listen(port, async () => {
   console.log(`Server running on http://localhost:${port}`);
 
@@ -224,8 +291,13 @@ app.listen(port, async () => {
     await producer.connect();
     console.log("Kafka producer connected");
     await tradeConsumer.connect();
+    await balanceResponseConsumer.connect();
     await tradeConsumer.subscribe({
       topics: ["trade-data", "closed-trade-notifications"],
+      fromBeginning: true,
+    });
+    await balanceResponseConsumer.subscribe({
+      topic: "open-orders-response",
       fromBeginning: true,
     });
     await tradeConsumer.run({
@@ -246,6 +318,21 @@ app.listen(port, async () => {
             }
             if (orderData.userEmail && orderData.updatedBalance !== undefined) {
               await redis.set(`user:${orderData.userEmail}:balance`, orderData.updatedBalance.toString());
+            }
+          }
+        }
+      },
+    });
+
+    await balanceResponseConsumer.run({
+      eachMessage: async ({ topic, partition, message }) => {
+        if (message.value) {
+          const responseData = JSON.parse(message.value.toString());
+          if (responseData.data === "open-orders-response") {
+            const requestId = responseData.requestId;
+            if (pendingOrderRequests.has(requestId)) {
+              const { resolve } = pendingOrderRequests.get(requestId)!;
+              resolve(responseData.balances);
             }
           }
         }
