@@ -48,9 +48,6 @@ const consumeBackpackMessages = async () => {
               const adjustedPrice = update.price / Math.pow(10, update.decimal);
               currentPrice.set(update.asset, adjustedPrice);
 
-
-              
-
               activeOrders.forEach((order) => {
                 if (order.asset === update.asset) {
                   const updatedUnrealizedPnL = calculateUnrealizedPnL(
@@ -77,6 +74,7 @@ const consumeBackpackMessages = async () => {
                             requestId: `liquidation-${
                               order.orderId
                             }-${Date.now()}`,
+                            liquidated: true,
                           }),
                         },
                       ],
@@ -204,7 +202,9 @@ const consumeBackpackMessages = async () => {
             userData.set(orderToClose.userEmail, user);
           }
 
-          console.log(`>>> Deleting order ${orderIdToClose} from activeOrders map.`);
+          console.log(
+            `>>> Deleting order ${orderIdToClose} from activeOrders map.`
+          );
           activeOrders.delete(orderIdToClose);
           console.log(
             `Order ${orderIdToClose} manually closed. Realized PnL: ${realizedPnl}`
@@ -219,10 +219,14 @@ const consumeBackpackMessages = async () => {
                   requestId: requestId,
                   orderId: orderIdToClose,
                   pnl: realizedPnl,
+                  openPrice: orderToClose.entryPrice,
                   closePrice: assetCurrentPrice,
+                  leverage: orderToClose.leverage,
                   closeTimestamp: orderToClose.closeTimestamp,
                   userEmail: orderToClose.userEmail,
                   updatedBalance: user ? user.balance : undefined,
+                  assetSymbol: orderToClose.asset,
+                  liquidated: orderData.liquidated || false,
                 }),
               },
             ],
@@ -250,7 +254,10 @@ const consumeBackpackMessages = async () => {
             (order) => order.userEmail === userEmail
           );
 
-          const assetBalances: Record<string, { balance: number; decimals: number }> = {};
+          const assetBalances: Record<
+            string,
+            { balance: number; decimals: number }
+          > = {};
 
           userOrders.forEach((order) => {
             if (!assetBalances[order.asset]) {

@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ExistingTrade {
+  id          String   @id @default(uuid())
+  openPrice   Float
+  closePrice  Float
+  leverage    Float
+  pnl         Float
+  asset       Asset    @relation(fields: [assetId], references: [id])
+  assetId     String
+  liquidated  Boolean
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  createdAt   DateTime @default(now())
+}
+
+model Asset {
+  id             String          @id @default(uuid())
+  symbol         String          @unique
+  imageUrl       String
+  name           String
+  decimals       Int
+  existingTrades ExistingTrade[]
+}
+
+model User {
+  id             String          @id @default(uuid())
+  email          String          @unique
+  balance        Float           @default(5000.0)
+  lastLoggedIn   DateTime?
+  existingTrades ExistingTrade[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@map("users")
+}

@@ -5,10 +5,9 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { fetchBackpackData } from "./websockets/backpackWebsocket";
 import { Kafka } from "kafkajs";
-import { redis } from "./lib/redisClient";
 import { v4 as uuidv4 } from "uuid";
-import { resolve } from "path";
-
+import { prisma } from "./lib/prisma";
+import { redis } from "./lib/redisClient";
 const pendingOrderRequests = new Map<
   string,
   { resolve: (value: any) => void; reject: (reason?: any) => void }
@@ -82,11 +81,18 @@ app.get("/verify", async (req, res) => {
     ) as { email: string };
     const userEmail = decoded.email;
 
-    const balance = await redis.get(`user:${userEmail}:balance`);
-    if (balance === null) {
-      await redis.set(`user:${userEmail}:balance`, "5000");
+    // Create or get user with Prisma
+    let user = await prisma.user.findFirst({
+      where: { email: userEmail },
+    });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: userEmail,
+          // balance: 5000,
+        },
+      });
     }
-
     res.cookie("auth_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -203,6 +209,7 @@ app.post("/api/v1/close", authenticateToken, async (req, res) => {
           orderId,
           data: "close-trade",
           requestId,
+          liquidated: false,
         }),
       },
     ],
@@ -229,7 +236,7 @@ app.get("/api/v1/balance", authenticateToken, async (req, res) => {
 
   const balancePromise = new Promise((resolve, reject) => {
     pendingOrderRequests.set(requestId, { resolve, reject });
-    
+
     setTimeout(() => {
       if (pendingOrderRequests.has(requestId)) {
         pendingOrderRequests.delete(requestId);
@@ -268,19 +275,19 @@ app.get("/api/v1/supportedAssets", (req, res) => {
       {
         symbol: "BTC",
         name: "Bitcoin",
-        imageUrl: "https://cryptologos.cc/logos/bitcoin-btc-logo.png"
+        imageUrl: "https://cryptologos.cc/logos/bitcoin-btc-logo.png",
       },
       {
         symbol: "SOL",
-        name: "Solana", 
-        imageUrl: "https://cryptologos.cc/logos/solana-sol-logo.png"
+        name: "Solana",
+        imageUrl: "https://cryptologos.cc/logos/solana-sol-logo.png",
       },
       {
         symbol: "ETH",
         name: "Ethereum",
-        imageUrl: "https://cryptologos.cc/logos/ethereum-eth-logo.png"
-      }
-    ]
+        imageUrl: "https://cryptologos.cc/logos/ethereum-eth-logo.png",
+      },
+    ],
   });
 });
 
@@ -314,10 +321,126 @@ app.listen(port, async () => {
             if (pendingOrderRequests.has(requestId)) {
               const { resolve } = pendingOrderRequests.get(requestId)!;
 
-              resolve(orderData);
+              resolve(orderData.orderId);
             }
             if (orderData.userEmail && orderData.updatedBalance !== undefined) {
-              await redis.set(`user:${orderData.userEmail}:balance`, orderData.updatedBalance.toString());
+              await redis.set(
+                `user:${orderData.userEmail}:balance`,
+                orderData.updatedBalance.toString()
+              );
+            }
+
+            // // Logic to save closed trade to Prisma
+            // try {
+            //   const {
+            //     openPrice,
+            //     closePrice,
+            //     leverage,
+            //     pnl,
+            //     assetSymbol,
+            //     liquidated,
+            //     userEmail,
+            //   } = orderData;
+
+            //   const user = await prisma.user.findUnique({
+            //     where: { email: userEmail },
+            //     select: { id: true },
+            //   });
+
+            //   const asset = await prisma.asset.findUnique({
+            //     where: { symbol: assetSymbol },
+            //     select: { id: true },
+            //   });
+
+            //   if (user && asset) {
+            //     await prisma.existingTrade.create({
+            //       data: {
+            //         openPrice: parseFloat(openPrice),
+            //         closePrice: parseFloat(closePrice),
+            //         leverage: parseFloat(leverage),
+            //         pnl: parseFloat(pnl),
+            //         asset: { connect: { id: asset.id } },
+            //         liquidated: liquidated,
+            //         user: { connect: { id: user.id } },
+            //       },
+            //     });
+            //     console.log("Closed trade saved to Prisma:", orderData);
+            //   } else {
+            //     console.error(
+            //       "User or Asset not found for closed trade:",
+            //       orderData
+            //     );
+            //   }
+            // } catch (error) {
+            //   console.error("Error saving closed trade to Prisma:", error);
+            // }
+
+            try {
+              // You need to ensure orderData contains these fields from your Kafka message
+              const {
+                openPrice,
+                closePrice,
+                leverage,
+                pnl,
+                assetSymbol, // Assuming assetSymbol comes from Kafka
+                liquidated,
+                userEmail, // Assuming userEmail comes from Kafka
+              } = orderData;
+
+              // First, find the user and asset to get their IDs
+              const user = await prisma.user.findFirst({
+                where: { email: userEmail },
+                select: { id: true }, // Select only the ID
+              });
+
+              let asset = await prisma.asset.findUnique({
+                where: { symbol: assetSymbol },
+                select: { id: true },
+              });
+
+              if (!asset) {
+                console.log(`Asset ${assetSymbol} not found. Creating it.`);
+                try {
+                  asset = await prisma.asset.create({
+                    data: {
+                      symbol: assetSymbol,
+                      name: assetSymbol,
+                      imageUrl: "", // Not available in the message
+                      decimals: 0, // Not available in the message
+                    },
+                    select: { id: true },
+                  });
+                } catch (e) {
+                  console.error(`Failed to create asset ${assetSymbol}`, e);
+                  // In case of a race condition where another process created it
+                  asset = await prisma.asset.findUnique({
+                    where: { symbol: assetSymbol },
+                    select: { id: true },
+                  });
+                }
+              }
+
+              if (user && asset) {
+                await prisma.existingTrade.create({
+                  data: {
+                    openPrice: parseFloat(openPrice), // Ensure correct type
+                    closePrice: parseFloat(closePrice), // Ensure correct type
+                    leverage: parseFloat(leverage), // Ensure correct type
+                    pnl: parseFloat(pnl), // Ensure correct type
+                    asset: { connect: { id: asset.id } }, // Connect to existing asset
+                    liquidated: liquidated,
+                    user: { connect: { id: user.id } }, // Connect to existing user
+                  },
+                });
+                console.log("Closed trade saved to Prisma:", orderData);
+              } else {
+                console.error(
+                  "User or Asset not found for closed trade:",
+                  orderData
+                );
+              }
+            } catch (error) {
+              console.error("Error saving closed trade to Prisma:", error);
             }
           }
         }

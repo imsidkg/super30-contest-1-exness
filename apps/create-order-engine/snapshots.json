@@ -1,27 +1,11 @@
 [
   {
     "userId": "siddharth8271skg2@gmail.com",
-    "balance": 4994,
-    "openOrders": [
-      {
-        "orderId": 956008,
-        "userEmail": "siddharth8271skg2@gmail.com",
-        "asset": "SOL",
-        "type": "long",
-        "margin": 100,
-        "leverage": 10,
-        "slippage": 0.01,
-        "entryPrice": 206.77,
-        "currentPrice": 206.77,
-        "quantity": 4.8362915316535275,
-        "unrealizedPnL": 0.14508874594961133,
-        "userBalance": 4894,
-        "requestId": "157c226d-f8eb-4bfa-9ab2-2e5d0533e60d"
-      }
-    ],
+    "balance": 4987.427699351392,
+    "openOrders": [],
     "prices": {
-      "SOL": 206.8
+      "SOL": 209.48
     },
-    "timestamp": "2025-09-08T06:09:47.390Z"
+    "timestamp": "2025-09-08T09:39:07.862Z"
   }
 ]
