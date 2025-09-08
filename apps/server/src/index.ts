@@ -81,7 +81,6 @@ app.get("/verify", async (req, res) => {
     ) as { email: string };
     const userEmail = decoded.email;
 
-    // Create or get user with Prisma
     let user = await prisma.user.findFirst({
       where: { email: userEmail },
     });
@@ -89,7 +88,6 @@ app.get("/verify", async (req, res) => {
       user = await prisma.user.create({
         data: {
           email: userEmail,
-          // balance: 5000,
         },
       });
     }
@@ -330,67 +328,20 @@ app.listen(port, async () => {
               );
             }
 
-            // // Logic to save closed trade to Prisma
-            // try {
-            //   const {
-            //     openPrice,
-            //     closePrice,
-            //     leverage,
-            //     pnl,
-            //     assetSymbol,
-            //     liquidated,
-            //     userEmail,
-            //   } = orderData;
-
-            //   const user = await prisma.user.findUnique({
-            //     where: { email: userEmail },
-            //     select: { id: true },
-            //   });
-
-            //   const asset = await prisma.asset.findUnique({
-            //     where: { symbol: assetSymbol },
-            //     select: { id: true },
-            //   });
-
-            //   if (user && asset) {
-            //     await prisma.existingTrade.create({
-            //       data: {
-            //         openPrice: parseFloat(openPrice),
-            //         closePrice: parseFloat(closePrice),
-            //         leverage: parseFloat(leverage),
-            //         pnl: parseFloat(pnl),
-            //         asset: { connect: { id: asset.id } },
-            //         liquidated: liquidated,
-            //         user: { connect: { id: user.id } },
-            //       },
-            //     });
-            //     console.log("Closed trade saved to Prisma:", orderData);
-            //   } else {
-            //     console.error(
-            //       "User or Asset not found for closed trade:",
-            //       orderData
-            //     );
-            //   }
-            // } catch (error) {
-            //   console.error("Error saving closed trade to Prisma:", error);
-            // }
-
             try {
-              // You need to ensure orderData contains these fields from your Kafka message
               const {
                 openPrice,
                 closePrice,
                 leverage,
                 pnl,
-                assetSymbol, // Assuming assetSymbol comes from Kafka
+                assetSymbol,
                 liquidated,
-                userEmail, // Assuming userEmail comes from Kafka
+                userEmail,
               } = orderData;
 
-              // First, find the user and asset to get their IDs
               const user = await prisma.user.findFirst({
                 where: { email: userEmail },
-                select: { id: true }, // Select only the ID
+                select: { id: true },
               });
 
               let asset = await prisma.asset.findUnique({
@@ -405,14 +356,13 @@ app.listen(port, async () => {
                     data: {
                       symbol: assetSymbol,
                       name: assetSymbol,
-                      imageUrl: "", // Not available in the message
-                      decimals: 0, // Not available in the message
+                      imageUrl: "",
+                      decimals: 0,
                     },
                     select: { id: true },
                   });
                 } catch (e) {
                   console.error(`Failed to create asset ${assetSymbol}`, e);
-                  // In case of a race condition where another process created it
                   asset = await prisma.asset.findUnique({
                     where: { symbol: assetSymbol },
                     select: { id: true },
@@ -423,13 +373,13 @@ app.listen(port, async () => {
               if (user && asset) {
                 await prisma.existingTrade.create({
                   data: {
-                    openPrice: parseFloat(openPrice), // Ensure correct type
-                    closePrice: parseFloat(closePrice), // Ensure correct type
-                    leverage: parseFloat(leverage), // Ensure correct type
-                    pnl: parseFloat(pnl), // Ensure correct type
-                    asset: { connect: { id: asset.id } }, // Connect to existing asset
+                    openPrice: parseFloat(openPrice),
+                    closePrice: parseFloat(closePrice),
+                    leverage: parseFloat(leverage),
+                    pnl: parseFloat(pnl),
+                    asset: { connect: { id: asset.id } },
                     liquidated: liquidated,
-                    user: { connect: { id: user.id } }, // Connect to existing user
+                    user: { connect: { id: user.id } },
                   },
                 });
                 console.log("Closed trade saved to Prisma:", orderData);

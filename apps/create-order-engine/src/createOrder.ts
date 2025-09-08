@@ -19,10 +19,6 @@ export const createOrder = ({
   currentPrice: number;
   requestId: string;
 }) => {
-  // For market orders without priceForSlippage, we need to implement a different approach
-  // One option is to use a recent average price or implement a price validation mechanism
-  // For now, we'll proceed with the order creation using current market price
-  
   const orderId = Math.floor(Math.random() * 1000000);
 
   let quantity: number;
@@ -62,7 +58,6 @@ export const createOrder = ({
   return order;
 };
 
-// Slippage check function for market orders
 export const checkSlippage = (
   type: "long" | "short",
   expectedPrice: number,
@@ -70,10 +65,8 @@ export const checkSlippage = (
   slippage: number
 ): boolean => {
   if (type === "long") {
-    // For long positions, actual price should not be higher than expected + slippage
     return actualPrice <= expectedPrice * (1 + slippage);
   } else if (type === "short") {
-    // For short positions, actual price should not be lower than expected - slippage
     return actualPrice >= expectedPrice * (1 - slippage);
   }
   return false;

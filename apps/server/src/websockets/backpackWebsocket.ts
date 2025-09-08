@@ -12,7 +12,7 @@ export const fetchBackpackData = async (symbols: string[]) => {
   });
 
   const producer = kafka.producer();
-  await producer.connect()
+  await producer.connect();
 
   ws.on("open", () => {
     console.log(" Websocket connected to Backpack");
@@ -58,11 +58,10 @@ export const fetchBackpackData = async (symbols: string[]) => {
           ],
         };
 
-        // Store the current price for timestamp-based slippage validation
         const adjustedPrice = scaledPrice / Math.pow(10, decimal);
         currentPrices.set(asset, {
           price: adjustedPrice,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
 
         await producer.send({
@@ -71,7 +70,7 @@ export const fetchBackpackData = async (symbols: string[]) => {
             {
               value: JSON.stringify({
                 priceUpdatePayload,
-                data: "binance"
+                data: "binance",
               }),
             },
           ],
